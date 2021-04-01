@@ -1,22 +1,283 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        maven { url "https://repo.spring.io/milestone" }
+        maven { url "https://repo.spring.io/snapshot" }
+    }
+
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:2.4.0-SNAPSHOT"
+        classpath "io.spring.gradle:dependency-management-plugin:1.0.10.RELEASE"
+        classpath "org.ajoberstar:gradle-git:1.6.0"
+    }
+}
 plugins {
-    id 'org.springframework.boot' version '2.4.4'
+    id 'org.springframework.boot' version '2.4.2'
     id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+
+    id 'jacoco'
     id 'java'
+    id 'idea'
+    id 'maven'
+}
+ext {
+    set('lombokVersion', "1.18.16")
 }
 
-group = 'com.wani'
-version = '0.0.1-SNAPSHOT'
-sourceCompatibility = '11'
-
-repositories {
-    mavenCentral()
+allprojects {
+    repositories {
+        mavenCentral()
+        maven { url "https://repo.spring.io/milestone" }
+        maven { url "https://repo.spring.io/snapshot" }
+        maven { url "https://jitpack.io" }
+    }
 }
 
-dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+jacoco {
+    // JaCoCo 버전
+    toolVersion = '0.8.5'
+
+//  테스트결과 리포트를 저장할 경로 변경
+//  default는 "${project.reporting.baseDir}/jacoco"
+//  reportsDir = file("$buildDir/customJacocoReportDir")
+}
+
+def requiredIntegrationProjects = [ project(":common")]
+def querydslProjects = [project(":common")]
+
+
+subprojects {
+
+    apply plugin: 'java'
+    apply plugin: 'idea'
+    apply plugin: "org.springframework.boot"
+    apply plugin: "io.spring.dependency-management"
+
+    group = 'com.wani'
+    version = '0.0.1-SNAPSHOT'
+    sourceCompatibility = '11'
+
+    configurations {
+        developmentOnly
+        runtimeClasspath {
+            extendsFrom developmentOnly
+        }
+        compileOnly {
+            extendsFrom annotationProcessor
+        }
+        all {
+            exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+        }
+    }
+
+    compileJava.options.encoding = 'UTF-8'
+
+    repositories {
+        mavenCentral()
+        jcenter()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+            maven { url 'https://jitpack.io' }
+        }
+    }
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+
+        implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+        implementation 'org.springframework.boot:spring-boot-starter-log4j2'
+
+        testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+        annotationProcessor 'org.projectlombok:lombok:1.18.8'
+
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+
+}
+
+configure(requiredIntegrationProjects) {
+    sourceSets {
+        integrationTest {
+            java {
+                compileClasspath += main.output + test.output
+                runtimeClasspath += main.output + test.output
+                srcDir file('src/integration-test/java')
+            }
+            resources {
+                srcDir file('src/integration-test/resources')
+            }
+        }
+    }
+
+    configurations {
+        integrationTestCompile.extendsFrom testCompile
+        integrationTestRuntime.extendsFrom testRuntime
+    }
+
+    task integrationTest(type: Test) {
+        description = "Runs then integration tests."
+
+        testClassesDirs = sourceSets.integrationTest.output.classesDirs
+        classpath = sourceSets.integrationTest.runtimeClasspath
+    }
+
+    check.dependsOn integrationTest
+    integrationTest.mustRunAfter test
+
+
+    dependencies {
+        testCompile "org.springframework.boot:spring-boot-starter-test"
+    }
+}
+
+configure(querydslProjects) {
+
+    dependencies {
+        compile("com.querydsl:querydsl-core") // querydsl
+        compile("com.querydsl:querydsl-jpa") // querydsl
+        annotationProcessor("com.querydsl:querydsl-apt:4.3.1:jpa") // querydsl JPAAnnotationProcessor 사용 지정
+        annotationProcessor("jakarta.persistence:jakarta.persistence-api")
+        annotationProcessor("jakarta.annotation:jakarta.annotation-api")
+
+    }
+
+    def generated = 'src/main/generated'
+    sourceSets {
+        main.java.srcDirs += [generated]
+    }
+
+    tasks.withType(JavaCompile) {
+        options.annotationProcessorGeneratedSourcesDirectory = file(generated)
+    }
+
+    clean.doLast {
+        file(generated).deleteDir()
+    }
 }
 
 test {
+    jacoco {
+        destinationFile = file("$buildDir/jacoco/jacoco.exec")
+    }
     useJUnitPlatform()
+    finalizedBy 'jacocoTestReport'
 }
+jacocoTestReport {
+    reports {
+        // 원하는 리포트를 켜고 끌 수 있다.
+        html.enabled true
+        xml.enabled false
+        csv.enabled true
+
+//      각 리포트 타입 마다 리포트 저장 경로를 설정할 수 있다.
+//      html.destination file("$buildDir/jacocoHtml")
+//      xml.destination file("$buildDir/jacoco.xml")
+    }
+    finalizedBy 'jacocoTestCoverageVerification'
+}
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            // 'element'가 없으면 프로젝트의 전체 파일을 합친 값을 기준으로 한다.
+            limit {
+                // 'counter'를 지정하지 않으면 default는 'INSTRUCTION'
+                // 'value'를 지정하지 않으면 default는 'COVEREDRATIO'
+                minimum = 0.44
+            }
+        }
+        rule {
+            // 룰을 간단히 켜고 끌 수 있다.
+            enabled = true
+
+            // 룰을 체크할 단위는 클래스 단위
+            element = 'CLASS'
+
+            // 브랜치 커버리지를 최소한 90% 만족시켜야 한다.
+            limit {
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.30
+            }
+
+            // 라인 커버리지를 최소한 80% 만족시켜야 한다.
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.00
+            }
+
+            // 빈 줄을 제외한 코드의 라인수를 최대 200라인으로 제한한다.
+            limit {
+                counter = 'LINE'
+                value = 'TOTALCOUNT'
+                maximum = 200
+//              maximum = 8
+            }
+
+            // 커버리지 체크를 제외할 클래스들
+            excludes = [
+//                    '*.test.*',
+            ]
+        }
+    }
+}
+
+
+task submodulesUpdate(type: Exec) {
+    group 'Build Setup'
+    description 'Updates (and inits) git submodules'
+    println '>>> Get application.yml from git submodule'
+    commandLine 'git', 'submodule', 'update', '--init', '--recursive'
+}
+
+task copyApiProperies(type: Copy) {
+    group 'build'
+    description 'Copy tecobrary-api module application.yml files to each modules'
+    println '>>> Copy tecobrary-api module application.yml files to each modules'
+    from "$rootDir/yml/application-api/resources"
+    include "*.yml"
+    into "$rootDir/application-api/src/main/resources"
+    dependsOn submodulesUpdate
+}
+
+task copyEventProcessorProperies(type: Copy) {
+    group 'build'
+    description 'Copy tecobrary-event-processor module application.yml files to each modules'
+    println '>>> Copy tecobrary-event-processor module application.yml files to each modules'
+    from "$rootDir/yml/admin-api/resources"
+    include "*.yml"
+    into "$rootDir/admin-api/src/main/resources"
+    dependsOn submodulesUpdate
+}
+
+task copyBatchProperies(type: Copy) {
+    group 'build'
+    description 'Copy tecobrary-batch module application.yml files to each modules'
+    println '>>> Copy tecobrary-batch module application.yml files to each modules'
+    from "$rootDir/yml/external-api"
+    include "*.yml"
+    into "$rootDir/external-api/src/main/resources"
+    dependsOn submodulesUpdate
+}
+
+task setupProperties {
+    group 'build'
+    description 'Setup application.yml files'
+    dependsOn submodulesUpdate
+    dependsOn copyApiProperies
+    dependsOn copyBatchProperies
+    dependsOn copyEventProcessorProperies
+}
+
+task(hello) {
+    println "root : $rootDir"
+}
+
