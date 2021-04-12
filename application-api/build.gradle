@@ -30,6 +30,8 @@ dependencies {
     implementation "io.jsonwebtoken:jjwt:0.9.1"
 
     testImplementation 'io.rest-assured:rest-assured:3.3.0'
+    asciidoctor 'org.springframework.restdocs:spring-restdocs-asciidoctor:2.0.5.RELEASE'
+    testImplementation 'org.springframework.restdocs:spring-restdocs-restassured:2.0.5.RELEASE'
 
 
     implementation "org.springframework.boot:spring-boot-starter-oauth2-client"
@@ -43,6 +45,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-cache'
 
     implementation('com.github.lannstark:excel-download:0.1.1')
+
 
 }
 

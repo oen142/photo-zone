@@ -27,5 +27,4 @@ public class Member {
 
     private Set<MemberRole> memberRoles;
 
-
 }
